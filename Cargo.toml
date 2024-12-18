@@ -3,7 +3,7 @@ name = "grid-iter"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-keywords = ["grid,iterator,nostd"]
+keywords = ["grid", "iterator", "nostd"]
 description = "Ideomatic Grid operations via Iterators"
 repository = "https://github.com/mountainfloating/grid-iter"
 
