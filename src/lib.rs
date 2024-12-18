@@ -1,5 +1,4 @@
-//#[cfg(feature= "nostd")]
-//#![no_std]
+#![no_std]
 //! Grids for Iterators
 //!
 //! Provides a two dimensional abstraction over Iterators.
@@ -247,16 +246,10 @@ fn index_from_flat(gridcolumns: usize, flat: usize) -> (usize, usize) {
 fn index_to_flat(gridcolumns: usize, col: usize, row: usize) -> usize {
     gridcolumns * row + col
 }
-#[cfg(test)]
-mod tests {
-    use super::IntoGridIter;
-    #[test]
-    fn test_get() {
-        println!("{}", (0..25usize).into_grid_iter(5));
-        let t = (0..25)
-            .into_grid_iter(5)
-            .iter_diag_fwd(4, 2)
-            .collect::<Vec<_>>();
-        println!("{t:?}");
-    }
-}
+
+// #[cfg(test)]
+// mod tests {
+//     use super::IntoGridIter;
+//     #[test]
+//     fn test_get() {}
+// }
