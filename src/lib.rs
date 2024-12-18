@@ -7,11 +7,12 @@
 //! use grid_iter::IntoGridIter;
 //!
 //! let file:&str = "1,2,3,4,5\n6,7,8,9,10\n11,12,13,14,15";
+//! let columns = file.find('\n').unwrap();
 //! let mut store = file.lines()
 //!     .flat_map(|line|line.split(',').map(|s|s.parse().unwrap()))
 //!     .collect::<Vec<_>>();
-//! store.iter_mut().into_grid_iter(5).iter_col(3).for_each(|i| *i= 0);
-//! store.iter_mut().into_grid_iter(5).iter_row(1).for_each(|i| *i+= 1);
+//! store.iter_mut().into_grid_iter(columns).iter_col(3).for_each(|i| *i= 0);
+//! store.iter_mut().into_grid_iter(columns).iter_row(1).for_each(|i| *i+= 1);
 //! let borrowing_grid = store.iter().into_grid_iter(5);
 //! drop(borrowing_grid);
 //! let capturing_grid = store.iter().into_grid_iter(5);
@@ -46,7 +47,7 @@ impl<I: Iterator<Item = T> + Clone, T: core::fmt::Display> core::fmt::Display fo
     }
 }
 
-/// ToGrid ist implemented for all iterators.
+/// IntoGridIter ist implemented for all iterators.
 /// Provides the grid function to wrap iterators with the Grid struct which contains the main functionality.
 pub trait IntoGridIter<I: Iterator<Item = T>, T> {
     fn into_grid_iter(self, columns: usize) -> GridIter<I, T>;
@@ -116,6 +117,36 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
             .skip(index_to_flat(self.columns, col, row))
             .take(1)
             .next()
+    }
+    pub fn get_kernel(self, col: usize, row: usize) -> Option<[<I as IntoIterator>::Item; 9]> {
+        if col == 0 || col == self.columns - 1 || row == 0 {
+            None
+        } else {
+            let mut iter = self
+                .inner
+                .skip(index_to_flat(self.columns, col - 1, row - 1));
+            Some([
+                iter.next()?,
+                iter.next()?,
+                iter.next()?,
+                {
+                    (0..self.columns - 3).for_each(|_| {
+                        iter.next();
+                    });
+                    iter.next()?
+                },
+                iter.next()?,
+                iter.next()?,
+                {
+                    (0..self.columns - 3).for_each(|_| {
+                        iter.next();
+                    });
+                    iter.next()?
+                },
+                iter.next()?,
+                iter.next()?,
+            ])
+        }
     }
     pub fn position<P: FnMut(I::Item) -> bool>(mut self, pred: P) -> Option<(usize, usize)> {
         self.inner
@@ -276,6 +307,13 @@ impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
                     .map(move |(r, s)| s.iter_diag_fwd(col_max, r)),
             )
     }
+    pub fn iter_kernels(mut self) -> impl Iterator<Item = [T; 9]> {
+        let row_max = self.calc_rows() - 1;
+        let col_max = self.columns - 1;
+        repeat(self).zip(1..row_max).flat_map(move |(iter, r)| {
+            (1..col_max).filter_map(move |c| iter.clone().get_kernel(c, r))
+        })
+    }
 }
 fn index_from_flat(gridcolumns: usize, flat: usize) -> (usize, usize) {
     assert!(gridcolumns != 0, "Columns set to 0! Cant calculate index");
@@ -285,15 +323,16 @@ fn index_to_flat(gridcolumns: usize, col: usize, row: usize) -> usize {
     gridcolumns * row + col
 }
 
-#[cfg(test)]
-mod tests {
-    // use super::IntoGridIter;
-    #[test]
-    fn test_get() {
-        // println!("{}", (0..25).into_grid_iter(5));
-        // let t = (0..25)
-        //     .into_grid_iter(5)
-        //     .iter_diags_bwd()
-        //     .for_each(|f| println!("{:?}", f.collect::<Vec<_>>()));
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::IntoGridIter;
+//     #[test]
+//     fn test_get() {
+//         println!("{}", (0..25).into_grid_iter(5));
+//         let t = (0..25)
+//             .into_grid_iter(5)
+//             .iter_kernels()
+//             .for_each(|f| println!("{:?}", f));
+//         println!("{t:?}");
+//     }
+// }
