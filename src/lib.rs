@@ -65,7 +65,7 @@ impl<I: Iterator<Item = T>, T> IntoGridIter<I, T> for I {
 pub type Get<T> = Take<Skip<T>>;
 pub type RowIter<T> = Take<Skip<T>>;
 pub type ColIter<T> = StepBy<Skip<T>>;
-pub type DiagBwdIter<T> = StepBy<Skip<T>>;
+pub type DiagBwdIter<T> = Take<StepBy<Skip<T>>>;
 pub type DiagFwdIter<T> = Take<StepBy<Skip<T>>>;
 
 impl<I: Iterator<Item = T>, T> GridIter<I, T> {
@@ -172,17 +172,21 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     ///     .iter_diag_bwd(4,2)
     ///     .zip([2,8,14])
     ///     .for_each(|(l, r)| assert!(l == r));
+    /// (0..25).into_grid_iter(5)
+    ///     .iter_diag_bwd(4,0)
+    ///     .zip([4])
+    ///     .for_each(|(l, r)| assert!(l == r));
     ///```
     pub fn iter_diag_bwd(self, col: usize, row: usize) -> DiagBwdIter<I> {
         let diff = col.abs_diff(row);
-        let skip = if col > row {
+        let (skip, take) = if col > row {
             //topright
-            index_to_flat(self.columns, diff, 0)
+            (index_to_flat(self.columns, diff, 0), self.columns - diff)
         } else {
             // botleft
-            index_to_flat(self.columns, 0, diff)
+            (index_to_flat(self.columns, 0, diff), self.columns)
         };
-        self.inner.skip(skip).step_by(self.columns + 1)
+        self.inner.skip(skip).step_by(self.columns + 1).take(take)
     }
 }
 impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
@@ -198,6 +202,15 @@ impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
             rows
         }
     }
+    ///```rust
+    ///
+    /// use grid_iter::IntoGridIter;
+    /// assert!((0..25).into_grid_iter(5)
+    ///     .iter_rows()
+    ///     .flatten()
+    ///     .sum::<usize>()
+    ///     .eq(&(0..25).sum::<usize>()))
+    ///```
     pub fn iter_rows(mut self) -> impl Iterator<Item = RowIter<I>> {
         let rows = self.calc_rows();
         repeat(self)
@@ -205,6 +218,15 @@ impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
             .take(rows)
             .map(|(r, s)| s.iter_row(r))
     }
+    ///```rust
+    ///
+    /// use grid_iter::IntoGridIter;
+    /// assert!((0..25).into_grid_iter(5)
+    ///     .iter_cols()
+    ///     .flatten()
+    ///     .sum::<usize>()
+    ///     .eq(&(0..25).sum::<usize>()))
+    ///```
     pub fn iter_cols(self) -> impl Iterator<Item = ColIter<I>> {
         let columns = self.columns;
         repeat(self)
@@ -212,12 +234,23 @@ impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
             .take(columns)
             .map(|(c, s)| s.iter_col(c))
     }
-    pub fn iter_diags_bwd(self) -> impl Iterator<Item = DiagBwdIter<I>> {
+    ///```rust
+    ///
+    /// use grid_iter::IntoGridIter;
+    /// assert!((0..25).into_grid_iter(5)
+    ///     .iter_diags_bwd()
+    ///     .flatten()
+    ///     .sum::<usize>()
+    ///     .eq(&(0..25).sum::<usize>()))
+    ///```
+    pub fn iter_diags_bwd(mut self) -> impl Iterator<Item = DiagBwdIter<I>> {
+        let rows = self.calc_rows();
         (0..self.columns)
+            .rev()
             .zip(repeat(self.clone()))
             .map(|(c, s)| s.iter_diag_bwd(c, 0))
             .chain(
-                (self.columns..)
+                (1..rows)
                     .zip(repeat(self))
                     .map(|(r, s)| s.iter_diag_bwd(0, r)),
             )
@@ -225,18 +258,23 @@ impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
     ///```rust
     ///
     /// use grid_iter::IntoGridIter;
-    /// (0..25).into_grid_iter(5)
+    /// assert!((0..25).into_grid_iter(5)
     ///     .iter_diags_fwd()
     ///     .flatten()
-    ///     .sum()
-    ///     .eq(&(0..25).sum())
+    ///     .sum::<usize>()
+    ///     .eq(&(0..25).sum::<usize>()))
     ///```
-    pub fn iter_diags_fwd(self) -> impl Iterator<Item = DiagFwdIter<I>> {
+    pub fn iter_diags_fwd(mut self) -> impl Iterator<Item = DiagFwdIter<I>> {
+        let rows = self.calc_rows();
+        let col_max = self.columns - 1;
         (0..self.columns)
-            .rev()
             .zip(repeat(self.clone()))
             .map(|(c, s)| s.iter_diag_fwd(c, 0))
-            .chain((1..).zip(repeat(self)).map(|(r, s)| s.iter_diag_fwd(0, r)))
+            .chain(
+                (1..rows)
+                    .zip(repeat(self))
+                    .map(move |(r, s)| s.iter_diag_fwd(col_max, r)),
+            )
     }
 }
 fn index_from_flat(gridcolumns: usize, flat: usize) -> (usize, usize) {
@@ -247,9 +285,15 @@ fn index_to_flat(gridcolumns: usize, col: usize, row: usize) -> usize {
     gridcolumns * row + col
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::IntoGridIter;
-//     #[test]
-//     fn test_get() {}
-// }
+#[cfg(test)]
+mod tests {
+    // use super::IntoGridIter;
+    #[test]
+    fn test_get() {
+        // println!("{}", (0..25).into_grid_iter(5));
+        // let t = (0..25)
+        //     .into_grid_iter(5)
+        //     .iter_diags_bwd()
+        //     .for_each(|f| println!("{:?}", f.collect::<Vec<_>>()));
+    }
+}
