@@ -32,8 +32,8 @@ impl<I: Iterator<Item = T> + Clone, T> Clone for GridIter<I, T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            columns: self.columns.clone(),
-            rows: self.rows.clone(),
+            columns: self.columns,
+            rows: self.rows,
         }
     }
 }
@@ -41,7 +41,7 @@ impl<I: Iterator<Item = T> + Clone, T: core::fmt::Display> core::fmt::Display fo
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.clone().iter_rows().for_each(|col| {
             col.for_each(|ch| write!(f, "{}\t", ch).unwrap());
-            write!(f, "\n").unwrap();
+            writeln!(f).unwrap();
         });
         Ok(())
     }
@@ -82,9 +82,9 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     ///     .zip([3,8,13,18,23])
     ///     .for_each(|(l, r)| assert!(l == r));
     ///```   
-    pub fn iter_col(self, col: usize) -> ColIter<I> {
-        assert!(col < self.columns);
-        self.inner.into_iter().skip(col).step_by(self.columns)
+    pub fn iter_col(self, column_index: usize) -> ColIter<I> {
+        assert!(column_index < self.columns);
+        self.inner.skip(column_index).step_by(self.columns)
     }
     ///```rust
     ///
@@ -98,8 +98,8 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     ///     .zip(15..20)
     ///     .for_each(|(l, r)| assert!(l == r));
     ///```
-    pub fn iter_row(self, row: usize) -> RowIter<I> {
-        self.inner.skip(row * self.columns).take(self.columns)
+    pub fn iter_row(self, row_index: usize) -> RowIter<I> {
+        self.inner.skip(row_index * self.columns).take(self.columns)
     }
 
     ///```rust
@@ -112,19 +112,25 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     /// assert!((0..25).into_grid_iter(5)
     ///     .get(2,2)==Some(12))
     ///```
-    pub fn get(self, col: usize, row: usize) -> Option<<I as IntoIterator>::Item> {
+    pub fn get(self, col_index: usize, row_index: usize) -> Option<<I as IntoIterator>::Item> {
         self.inner
-            .skip(index_to_flat(self.columns, col, row))
+            .skip(grid_index_to_flat(self.columns, col_index, row_index))
             .take(1)
             .next()
     }
-    pub fn get_kernel(self, col: usize, row: usize) -> Option<[<I as IntoIterator>::Item; 9]> {
-        if col == 0 || col == self.columns - 1 || row == 0 {
+    pub fn get_kernel(
+        self,
+        column_index: usize,
+        row_index: usize,
+    ) -> Option<[<I as IntoIterator>::Item; 9]> {
+        if column_index == 0 || column_index == self.columns - 1 || row_index == 0 {
             None
         } else {
-            let mut iter = self
-                .inner
-                .skip(index_to_flat(self.columns, col - 1, row - 1));
+            let mut iter = self.inner.skip(grid_index_to_flat(
+                self.columns,
+                column_index - 1,
+                row_index - 1,
+            ));
             Some([
                 iter.next()?,
                 iter.next()?,
@@ -151,7 +157,7 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     pub fn position<P: FnMut(I::Item) -> bool>(mut self, pred: P) -> Option<(usize, usize)> {
         self.inner
             .position(pred)
-            .map(|flat| index_from_flat(self.columns, flat))
+            .map(|flat| flat_index_to_grid(self.columns, flat))
     }
 
     ///```rust
@@ -174,17 +180,20 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     ///     .zip([1,5])
     ///     .for_each(|(l, r)| assert!(l == r));
     ///```
-    pub fn iter_diag_fwd(self, col: usize, row: usize) -> DiagFwdIter<I> {
+    pub fn iter_diag_fwd(self, column_index: usize, row_index: usize) -> DiagFwdIter<I> {
         let col_max = self.columns - 1;
-        let (skip, take) = if col + row > self.columns - 1 {
+        let (skip, take) = if column_index + row_index > self.columns - 1 {
             // lower right part
             (
-                index_to_flat(self.columns, col_max, row - (col_max - col)),
+                grid_index_to_flat(self.columns, col_max, row_index - (col_max - column_index)),
                 self.columns,
             )
         } else {
             // upper left part
-            (index_to_flat(self.columns, row + col, 0), row + col + 1)
+            (
+                grid_index_to_flat(self.columns, row_index + column_index, 0),
+                row_index + column_index + 1,
+            )
         };
         self.inner.skip(skip).step_by(col_max).take(take)
     }
@@ -208,14 +217,17 @@ impl<I: Iterator<Item = T>, T> GridIter<I, T> {
     ///     .zip([4])
     ///     .for_each(|(l, r)| assert!(l == r));
     ///```
-    pub fn iter_diag_bwd(self, col: usize, row: usize) -> DiagBwdIter<I> {
-        let diff = col.abs_diff(row);
-        let (skip, take) = if col > row {
+    pub fn iter_diag_bwd(self, column_index: usize, row_index: usize) -> DiagBwdIter<I> {
+        let diff = column_index.abs_diff(row_index);
+        let (skip, take) = if column_index > row_index {
             //topright
-            (index_to_flat(self.columns, diff, 0), self.columns - diff)
+            (
+                grid_index_to_flat(self.columns, diff, 0),
+                self.columns - diff,
+            )
         } else {
             // botleft
-            (index_to_flat(self.columns, 0, diff), self.columns)
+            (grid_index_to_flat(self.columns, 0, diff), self.columns)
         };
         self.inner.skip(skip).step_by(self.columns + 1).take(take)
     }
@@ -315,24 +327,23 @@ impl<I: Iterator<Item = T> + Clone, T> GridIter<I, T> {
         })
     }
 }
-fn index_from_flat(gridcolumns: usize, flat: usize) -> (usize, usize) {
-    assert!(gridcolumns != 0, "Columns set to 0! Cant calculate index");
-    (flat % gridcolumns, flat / gridcolumns)
+fn flat_index_to_grid(grid_columns: usize, flat_index: usize) -> (usize, usize) {
+    assert!(grid_columns != 0, "Columns set to 0! Cant calculate index");
+    (flat_index % grid_columns, flat_index / grid_columns)
 }
-fn index_to_flat(gridcolumns: usize, col: usize, row: usize) -> usize {
-    gridcolumns * row + col
+fn grid_index_to_flat(grid_columns: usize, column_index: usize, row_index: usize) -> usize {
+    grid_columns * row_index + column_index
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::IntoGridIter;
-//     #[test]
-//     fn test_get() {
-//         println!("{}", (0..25).into_grid_iter(5));
-//         let t = (0..25)
-//             .into_grid_iter(5)
-//             .iter_kernels()
-//             .for_each(|f| println!("{:?}", f));
-//         println!("{t:?}");
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::{flat_index_to_grid, grid_index_to_flat};
+
+    #[test]
+    fn test_index() {
+        let (grid_col, flat_index) = (5123, 55);
+        let (col, row) = flat_index_to_grid(grid_col, flat_index);
+        let flat_index2 = grid_index_to_flat(grid_col, col, row);
+        assert_eq!(flat_index, flat_index2);
+    }
+}
